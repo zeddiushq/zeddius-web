@@ -1,14 +1,22 @@
-import { Geist, Geist_Mono, Inter } from "next/font/google"
+import localFont from "next/font/local"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"
 
-const interHeading = Inter({subsets:['latin'],variable:'--font-heading'});
+const calSans = localFont({
+  src: [
+    { path: "./fonts/CalSansVF.woff2", style: "normal", weight: "400 700" },
+    { path: "./fonts/CalSansVF-Italic.woff2", style: "italic", weight: "400 700" },
+  ],
+  variable: "--font-sans",
+})
 
-const inter = Inter({subsets:['latin'],variable:'--font-sans'})
-
-const geistMono = Geist_Mono({subsets:['latin'],variable:'--font-mono'})
+const paperMono = localFont({
+  src: "./fonts/PaperMono-VF.woff2",
+  variable: "--font-mono",
+  weight: "100 800",
+})
 
 export default function RootLayout({
   children,
@@ -19,7 +27,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", "font-mono", inter.variable, interHeading.variable, geistMono.variable)}
+      className={cn("antialiased", calSans.variable, paperMono.variable)}
     >
       <body>
         <ThemeProvider>{children}</ThemeProvider>
