@@ -12,12 +12,11 @@ function origin(name: string): string {
   return required(name).replace(/\/+$/, "")
 }
 
-// Origin only; lib/api/client.ts appends /v1.
+// Origin only; the client appends /v1.
 export function apiBaseUrl(): string {
   return origin("ZEDDIUS_API_URL")
 }
 
-// This app's own public origin, for building absolute URLs (e.g. the Apple redirect_uri).
 export function webBaseUrl(): string {
   return origin("WEB_BASE_URL")
 }

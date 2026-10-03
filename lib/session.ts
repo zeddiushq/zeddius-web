@@ -7,8 +7,7 @@ import type { AuthResponse } from "@/lib/api/types"
 export const ACCESS_COOKIE = "zeddius_access_token"
 export const REFRESH_COOKIE = "zeddius_refresh_token"
 
-// The browser drops the access cookie a little before the API would reject the token,
-// so the proxy sees "no cookie" and refreshes instead of forwarding a token that 401s.
+// Expires the cookie before the API rejects the token, so the proxy refreshes instead of forwarding a 401.
 const ACCESS_COOKIE_LIFETIME_FRACTION = 0.9
 
 function cookieOptions(maxAge: number) {
@@ -37,7 +36,7 @@ export async function getRefreshToken(): Promise<string | undefined> {
   return (await cookies()).get(REFRESH_COOKIE)?.value
 }
 
-// Only callable from a Server Action or Route Handler; Next forbids setting cookies during render.
+// Next forbids setting cookies during render; call from a Server Action or Route Handler.
 export async function setSession(
   auth: Pick<
     AuthResponse,

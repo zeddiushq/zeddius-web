@@ -1,5 +1,4 @@
-// Mirrors zeddius-api's request/response types (src/auth/routes.rs, src/domain/user/model.rs).
-// Hand-written; zeddius-api's /docs/openapi.json is the source of truth.
+// Hand-written; zeddius-api's OpenAPI doc is the source of truth.
 
 export interface ErrorResponse {
   error: {
@@ -34,7 +33,7 @@ export interface UserResponse {
 export interface AuthResponse {
   access_token: string
   refresh_token: string
-  // Seconds, relative to this response.
+  // Seconds, relative to the response.
   expires_in: number
   refresh_expires_in: number
   user: UserResponse

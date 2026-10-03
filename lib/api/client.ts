@@ -17,8 +17,7 @@ export class ApiError extends Error {
   }
 }
 
-// No usable access token. Callers redirect to /login; token refresh happens in proxy.ts,
-// since cookies can't be set during render.
+// Refresh lives in proxy.ts (cookies can't be set during render); callers just redirect to /login.
 export class SessionExpiredError extends Error {
   constructor() {
     super("session expired")
@@ -31,7 +30,7 @@ async function toApiError(res: Response): Promise<ApiError> {
     const { error } = (await res.json()) as ErrorResponse
     return new ApiError(res.status, error.code, error.message)
   } catch {
-    // Not zeddius-api's error shape; only infrastructure in front of it (e.g. Cloud Run) does this.
+    // Only infrastructure in front of the API (e.g. Cloud Run) answers outside the ErrorResponse shape.
     return new ApiError(
       res.status,
       "UNKNOWN",
@@ -84,8 +83,7 @@ function post(body?: unknown): RequestInit {
   }
 }
 
-// Raw response, for endpoints whose success and failure aren't a simple ok/not-ok
-// (oauth/apple: 200 signed in, 204 needs profile, 401 bad token).
+// Raw Response for oauth/apple, where 200, 204 and 401 each mean something different.
 export async function publicFetch(
   path: string,
   body?: unknown
@@ -93,7 +91,6 @@ export async function publicFetch(
   return send(path, post(body))
 }
 
-// Unauthenticated POST (register, login, forgot/reset-password, verify-email).
 export async function publicRequest<T = void>(
   path: string,
   body?: unknown
@@ -101,8 +98,7 @@ export async function publicRequest<T = void>(
   return parse<T>(await send(path, post(body)))
 }
 
-// Authenticated request. A 401 means the token is no longer valid; a 403 surfaces as
-// ApiError (e.g. unverified email on a VerifiedUser route).
+// 401 becomes SessionExpiredError; 403 (unverified email) stays an ApiError.
 export async function authedRequest<T = void>(
   path: string,
   init: RequestInit = {}
