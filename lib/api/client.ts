@@ -1,0 +1,127 @@
+import "server-only"
+
+import { apiBaseUrl } from "@/lib/config"
+import { getAccessToken } from "@/lib/session"
+import type { ErrorResponse } from "@/lib/api/types"
+
+const REQUEST_TIMEOUT_MS = 10_000
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string
+  ) {
+    super(message)
+    this.name = "ApiError"
+  }
+}
+
+// No usable access token. Callers redirect to /login; token refresh happens in proxy.ts,
+// since cookies can't be set during render.
+export class SessionExpiredError extends Error {
+  constructor() {
+    super("session expired")
+    this.name = "SessionExpiredError"
+  }
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  try {
+    const { error } = (await res.json()) as ErrorResponse
+    return new ApiError(res.status, error.code, error.message)
+  } catch {
+    // The /auth rate limiter's 429 isn't in the ErrorResponse shape.
+    if (res.status === 429) {
+      return new ApiError(
+        429,
+        "RATE_LIMITED",
+        "Too many requests. Please wait a moment and try again."
+      )
+    }
+    return new ApiError(
+      res.status,
+      "UNKNOWN",
+      res.statusText || "Request failed"
+    )
+  }
+}
+
+async function send(
+  path: string,
+  init: RequestInit,
+  accessToken?: string
+): Promise<Response> {
+  const headers = new Headers(init.headers)
+  headers.set("Content-Type", "application/json")
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`)
+  }
+
+  try {
+    return await fetch(`${apiBaseUrl()}/v1${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+  } catch {
+    throw new ApiError(
+      0,
+      "NETWORK_ERROR",
+      "Couldn't reach Zeddius. Check your connection and try again."
+    )
+  }
+}
+
+async function parse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    throw await toApiError(res)
+  }
+  if (res.status === 204) {
+    return undefined as T
+  }
+  return (await res.json()) as T
+}
+
+function post(body?: unknown): RequestInit {
+  return {
+    method: "POST",
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }
+}
+
+// Raw response, for endpoints whose success and failure aren't a simple ok/not-ok
+// (oauth/apple: 200 signed in, 204 needs profile, 401 bad token).
+export async function publicFetch(
+  path: string,
+  body?: unknown
+): Promise<Response> {
+  return send(path, post(body))
+}
+
+// Unauthenticated POST (register, login, forgot/reset-password, verify-email).
+export async function publicRequest<T = void>(
+  path: string,
+  body?: unknown
+): Promise<T> {
+  return parse<T>(await send(path, post(body)))
+}
+
+// Authenticated request. A 401 means the token is no longer valid; a 403 surfaces as
+// ApiError (e.g. unverified email on a VerifiedUser route).
+export async function authedRequest<T = void>(
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
+  const accessToken = await getAccessToken()
+  if (!accessToken) {
+    throw new SessionExpiredError()
+  }
+
+  const res = await send(path, init, accessToken)
+  if (res.status === 401) {
+    throw new SessionExpiredError()
+  }
+  return parse<T>(res)
+}

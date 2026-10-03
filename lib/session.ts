@@ -32,7 +32,10 @@ export async function getRefreshToken(): Promise<string | undefined> {
 }
 
 // Only callable from a Server Action or Route Handler; Next forbids setting cookies during render.
-export async function setSession(accessToken: string, refreshToken: string): Promise<void> {
+export async function setSession(
+  accessToken: string,
+  refreshToken: string
+): Promise<void> {
   const store = await cookies()
   store.set(ACCESS_COOKIE, accessToken, accessCookieOptions)
   store.set(REFRESH_COOKIE, refreshToken, refreshCookieOptions)
