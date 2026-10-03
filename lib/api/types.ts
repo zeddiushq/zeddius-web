@@ -34,6 +34,9 @@ export interface UserResponse {
 export interface AuthResponse {
   access_token: string
   refresh_token: string
+  // Seconds, relative to this response.
+  expires_in: number
+  refresh_expires_in: number
   user: UserResponse
 }
 

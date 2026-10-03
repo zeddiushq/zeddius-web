@@ -31,14 +31,7 @@ async function toApiError(res: Response): Promise<ApiError> {
     const { error } = (await res.json()) as ErrorResponse
     return new ApiError(res.status, error.code, error.message)
   } catch {
-    // The /auth rate limiter's 429 isn't in the ErrorResponse shape.
-    if (res.status === 429) {
-      return new ApiError(
-        429,
-        "RATE_LIMITED",
-        "Too many requests. Please wait a moment and try again."
-      )
-    }
+    // Not zeddius-api's error shape; only infrastructure in front of it (e.g. Cloud Run) does this.
     return new ApiError(
       res.status,
       "UNKNOWN",
