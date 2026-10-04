@@ -2,7 +2,7 @@ import "server-only"
 
 import { cookies } from "next/headers"
 
-import type { AuthResponse } from "@/lib/api/types"
+import type { AuthResponse } from "@/lib/api/schemas"
 
 export const ACCESS_COOKIE = "zeddius_access_token"
 export const REFRESH_COOKIE = "zeddius_refresh_token"

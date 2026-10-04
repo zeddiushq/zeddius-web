@@ -4,6 +4,14 @@
 
 ## Conventions
 
+### Types
+
+`type` for everything, not `interface`. Plain data and unions, no classes. Where a zod schema exists, derive the type with `z.infer` instead of writing it twice.
+
+### Errors
+
+Expected failures (bad credentials, 409, rate limit, expired session) are returned as `ApiResult` values, never thrown: Next wants expected errors as return values, and a thrown class doesn't survive the Server Action boundary. Unexpected failures (bugs) throw a plain `Error` for the error boundary.
+
 ### Comments
 
 Default to no comment. Well-named identifiers and control flow already say *what* the code does — a comment that restates that is noise to delete on sight.

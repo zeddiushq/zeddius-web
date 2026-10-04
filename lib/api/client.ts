@@ -1,116 +1,115 @@
 import "server-only"
 
-import { apiBaseUrl } from "@/lib/config"
+import { z } from "zod"
+
+import { getConfig } from "@/lib/config"
 import { getAccessToken } from "@/lib/session"
-import type { ErrorResponse } from "@/lib/api/types"
+import { errorResponseSchema } from "@/lib/api/schemas"
 
-const REQUEST_TIMEOUT_MS = 10_000
+// Longer than zeddius-api's 10s Resend timeout, since register and resend wait on the email send.
+const REQUEST_TIMEOUT_MS = 20_000
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message: string
-  ) {
-    super(message)
-    this.name = "ApiError"
-  }
+export type ApiFailure = {
+  kind: "api"
+  status: number
+  code: string
+  message: string
 }
 
 // Refresh lives in proxy.ts (cookies can't be set during render); callers just redirect to /login.
-export class SessionExpiredError extends Error {
-  constructor() {
-    super("session expired")
-    this.name = "SessionExpiredError"
-  }
+export type SessionExpired = { kind: "session-expired" }
+
+export type ApiResult<T, F = ApiFailure> =
+  { ok: true; data: T } | { ok: false; failure: F }
+
+type Options<S extends z.ZodType> = { body?: unknown; schema?: S }
+
+const sessionExpired: ApiResult<never, SessionExpired> = {
+  ok: false,
+  failure: { kind: "session-expired" },
 }
 
-async function toApiError(res: Response): Promise<ApiError> {
-  try {
-    const { error } = (await res.json()) as ErrorResponse
-    return new ApiError(res.status, error.code, error.message)
-  } catch {
-    // Only infrastructure in front of the API (e.g. Cloud Run) answers outside the ErrorResponse shape.
-    return new ApiError(
-      res.status,
-      "UNKNOWN",
-      res.statusText || "Request failed"
-    )
-  }
-}
-
-async function send(
+async function request<S extends z.ZodType>(
+  method: string,
   path: string,
-  init: RequestInit,
-  accessToken?: string
-): Promise<Response> {
-  const headers = new Headers(init.headers)
-  headers.set("Content-Type", "application/json")
-  if (accessToken) {
-    headers.set("Authorization", `Bearer ${accessToken}`)
-  }
-
+  { body, schema }: Options<S>,
+  token?: string
+): Promise<ApiResult<z.output<S>>> {
+  let res: Response
   try {
-    return await fetch(`${apiBaseUrl()}/v1${path}`, {
-      ...init,
-      headers,
+    res = await fetch(`${getConfig().apiUrl}/v1${path}`, {
+      method,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
   } catch {
-    throw new ApiError(
-      0,
-      "NETWORK_ERROR",
-      "Couldn't reach Zeddius. Check your connection and try again."
+    return {
+      ok: false,
+      failure: {
+        kind: "api",
+        status: 0,
+        code: "NETWORK_ERROR",
+        message: "Couldn't reach Zeddius. Check your connection and try again.",
+      },
+    }
+  }
+
+  if (res.ok) {
+    // No schema means S defaulted to ZodVoid, whose output is undefined.
+    if (!schema) return { ok: true, data: undefined as z.output<S> }
+
+    // A 204 parses as undefined, so only schemas marked .optional() accept it.
+    const parsed = schema.safeParse(
+      res.status === 204 ? undefined : await res.json()
     )
+    if (!parsed.success) {
+      throw new Error(
+        `Unexpected response from ${method} ${path}:\n${z.prettifyError(parsed.error)}`
+      )
+    }
+    return { ok: true, data: parsed.data }
   }
-}
 
-async function parse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    throw await toApiError(res)
-  }
-  if (res.status === 204) {
-    return undefined as T
-  }
-  return (await res.json()) as T
-}
-
-function post(body?: unknown): RequestInit {
+  // Only infrastructure in front of the API (e.g. Cloud Run) answers outside the ErrorResponse shape.
+  const parsed = errorResponseSchema.safeParse(
+    await res.json().catch(() => null)
+  )
   return {
-    method: "POST",
-    body: body === undefined ? undefined : JSON.stringify(body),
+    ok: false,
+    failure: {
+      kind: "api",
+      status: res.status,
+      code: parsed.success ? parsed.data.error.code : "UNKNOWN",
+      message: parsed.success
+        ? parsed.data.error.message
+        : res.statusText || "Request failed",
+    },
   }
 }
 
-// Raw Response for oauth/apple, where 200, 204 and 401 each mean something different.
-export async function publicFetch(
+export function publicRequest<S extends z.ZodType = z.ZodVoid>(
+  method: string,
   path: string,
-  body?: unknown
-): Promise<Response> {
-  return send(path, post(body))
+  options: Options<S> = {}
+): Promise<ApiResult<z.output<S>>> {
+  return request(method, path, options)
 }
 
-export async function publicRequest<T = void>(
+// 401 becomes session-expired; 403 (unverified email) stays an api failure.
+export async function authedRequest<S extends z.ZodType = z.ZodVoid>(
+  method: string,
   path: string,
-  body?: unknown
-): Promise<T> {
-  return parse<T>(await send(path, post(body)))
-}
+  options: Options<S> = {}
+): Promise<ApiResult<z.output<S>, ApiFailure | SessionExpired>> {
+  const token = await getAccessToken()
+  if (!token) return sessionExpired
 
-// 401 becomes SessionExpiredError; 403 (unverified email) stays an ApiError.
-export async function authedRequest<T = void>(
-  path: string,
-  init: RequestInit = {}
-): Promise<T> {
-  const accessToken = await getAccessToken()
-  if (!accessToken) {
-    throw new SessionExpiredError()
-  }
-
-  const res = await send(path, init, accessToken)
-  if (res.status === 401) {
-    throw new SessionExpiredError()
-  }
-  return parse<T>(res)
+  const result = await request(method, path, options, token)
+  if (!result.ok && result.failure.status === 401) return sessionExpired
+  return result
 }
