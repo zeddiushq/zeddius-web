@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import localFont from "next/font/local"
 
 import "./globals.css"
@@ -7,7 +8,11 @@ import { cn } from "@/lib/utils"
 const calSans = localFont({
   src: [
     { path: "./fonts/CalSansVF.woff2", style: "normal", weight: "400 700" },
-    { path: "./fonts/CalSansVF-Italic.woff2", style: "italic", weight: "400 700" },
+    {
+      path: "./fonts/CalSansVF-Italic.woff2",
+      style: "italic",
+      weight: "400 700",
+    },
   ],
   variable: "--font-sans",
 })
@@ -17,6 +22,10 @@ const paperMono = localFont({
   variable: "--font-mono",
   weight: "100 800",
 })
+
+export const metadata: Metadata = {
+  title: { default: "Zeddius", template: "%s · Zeddius" },
+}
 
 export default function RootLayout({
   children,
